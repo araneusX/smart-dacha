@@ -123,7 +123,12 @@ bool pingCloud(bool *isLive) {
 bool sendCloud(uint8_t type) {
   JsonDocument req;
   req["type"] = type;
-  fillSensorsJson(req["sensors"].to<JsonArray>());
+  JsonArray sensors = req["sensors"].to<JsonArray>();
+  fillSensorsJson(sensors);
+  if (sensors.size() == 0) {
+    Serial.printf("cloud: type %u skip (no sensors)\n", type);
+    return true;
+  }
   String payload;
   serializeJson(req, payload);
   if (!postCloudPayload(payload, nullptr, false)) {
