@@ -46,7 +46,7 @@ static bool sendHttpOnce(HttpMethod method, const String &url, const String &pay
   }
   client.stop();
   http.end();
-  return true;
+  return code > 0;
 }
 
 static bool postCloudPayload(const String &payload, String *response, bool fetchResult) {

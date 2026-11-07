@@ -5,7 +5,7 @@
 #define MAX_SENSORS 10
 #define SENSOR_PIN_1 4
 #define SENSOR_PIN_2 16
-#define SENSOR_PIN_3 -1
+#define SENSOR_PIN_3 17
 #define SENSOR_T_MIN_C -55.0f
 #define SENSOR_T_MAX_C 125.0f
 
@@ -19,6 +19,7 @@
 #define NTP_SERVER_2 "time.google.com"
 
 #define SERIAL_BAUD 115200
+#define WATCHDOG_TIMEOUT_SEC 120
 
 #define ALERT_TEMP_HIGH_C 100.0f
 #define ALERT_TEMP_LOW_C 0.0f

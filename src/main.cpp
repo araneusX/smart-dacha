@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include <math.h>
 
 #include "app_time.h"
@@ -8,6 +9,7 @@
 #include "heaters.h"
 #include "router.h"
 #include "sensors.h"
+#include "telegram.h"
 
 static unsigned long lastSample = 0;
 static unsigned long lastPing = 0;
@@ -18,6 +20,7 @@ static float liveSentT[MAX_SENSORS];
 static bool liveSentOk[MAX_SENSORS];
 static uint8_t liveSentCount = 0;
 static bool liveHasSnapshot = false;
+static bool cloudAlertSent = false;
 
 static bool hasLiveChanged() {
   const Sensors &sensors = getSensors();
@@ -45,10 +48,25 @@ static void rememberLiveSent() {
   liveHasSnapshot = true;
 }
 
+static bool sendCloudOrAlert(uint8_t type) {
+  if (sendCloud(type)) {
+    cloudAlertSent = false;
+    return true;
+  }
+  if (!cloudAlertSent) {
+    sendTelegramMessage("Облако недоступно");
+    cloudAlertSent = true;
+  }
+  return false;
+}
+
 void setup() {
   Serial.begin(SERIAL_BAUD);
   delay(200);
   Serial.println("smart-dch");
+
+  esp_task_wdt_init(WATCHDOG_TIMEOUT_SEC, true);
+  esp_task_wdt_add(NULL);
 
   initHeaters();
   initSensors();
@@ -59,6 +77,8 @@ void setup() {
 }
 
 void loop() {
+  esp_task_wdt_reset();
+
   pollWifi();
   pollRouter();
 
@@ -73,7 +93,7 @@ void loop() {
       bool historySent = false;
       const int slot = getHistorySlotId();
       if (slot > lastHistorySlot) {
-        if (sendCloud(1)) {
+        if (sendCloudOrAlert(1)) {
           lastHistorySlot = slot;
           historySent = true;
           lastLive = now;
@@ -86,7 +106,7 @@ void loop() {
         lastLive = 0;
       } else if (!historySent && (lastLive == 0 || now - lastLive >= LIVE_INTERVAL_MS) &&
                  hasLiveChanged()) {
-        if (sendCloud(2)) {
+        if (sendCloudOrAlert(2)) {
           lastLive = now;
           rememberLiveSent();
         }
@@ -104,6 +124,7 @@ void loop() {
     bool live = false;
     if (pingCloud(&live)) {
       reportCloudPingResult(true);
+      cloudAlertSent = false;
       isLive = live;
       Serial.printf("isLive=%s\n", isLive ? "true" : "false");
     } else {

@@ -81,7 +81,9 @@ static void scanBus(uint8_t bus) {
   }
   DeviceAddress addr;
   buses[bus].wire.reset_search();
-  while (sensors.count < MAX_SENSORS && buses[bus].wire.search(addr)) {
+  uint8_t attempts = 0;
+  while (sensors.count < MAX_SENSORS && attempts < 32 && buses[bus].wire.search(addr)) {
+    attempts++;
     if (OneWire::crc8(addr, 7) != addr[7]) {
       continue;
     }

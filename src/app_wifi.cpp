@@ -25,6 +25,7 @@ void pollWifi() {
   if (connected) {
     connected = false;
     Serial.println("Wi-Fi connection lost");
+    sendTelegramMessage("Wi-Fi connection lost");
   }
   unsigned long now = millis();
   if (lastAttempt != 0 && now - lastAttempt < WIFI_RECONNECT_MS) {
