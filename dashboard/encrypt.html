@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>smart-dch — шифрование URL</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 40rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      label,
+      input,
+      textarea,
+      button {
+        display: block;
+        width: 100%;
+        margin: 0.4rem 0;
+      }
+      textarea {
+        min-height: 6rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Шифрование URL Web App</h1>
+    <p>Результат вставьте в <code>dashboard/config.js</code> как <code>DASHBOARD_CIPHER</code>.</p>
+    <label>URL Apps Script</label>
+    <input id="url" type="text" placeholder="https://script.google.com/macros/s/.../exec" />
+    <label>Пароль</label>
+    <input id="password" type="password" />
+    <button id="go" type="button">Зашифровать</button>
+    <label>Токен</label>
+    <textarea id="out" readonly></textarea>
+    <script src="crypto.js"></script>
+    <script>
+      document.getElementById("go").onclick = async () => {
+        const url = document.getElementById("url").value.trim();
+        const password = document.getElementById("password").value;
+        const out = document.getElementById("out");
+        try {
+          out.value = await encryptUrl(url, password);
+        } catch (e) {
+          out.value = String(e);
+        }
+      };
+    </script>
+  </body>
+</html>

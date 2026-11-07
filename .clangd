@@ -1,0 +1,17 @@
+CompileFlags:
+  Add:
+    - -std=gnu++11
+    - -DARDUINO=10812
+    - -DARDUINO_ARCH_ESP32
+    - -DESP32
+    - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/cores/esp32
+    - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/variants/esp32
+    - -Iinclude
+    - -Isrc
+  Remove:
+    - -mlongcalls
+    - -fno-tree-switch-conversion
+    - -fstrict-volatile-bitfields
+    - -mtext-section-literals
+    - -fno-jump-tables
+    - -MMD

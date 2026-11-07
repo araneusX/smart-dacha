@@ -1,0 +1,21 @@
+{
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json",
+    "C_Cpp.default.compilerPath": "C:/Users/araneus/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-g++.exe",
+    "C_Cpp.default.intelliSenseMode": "gcc-x64",
+    "C_Cpp.default.cppStandard": "gnu++11",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/src",
+        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/cores/esp32",
+        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/variants/esp32"
+    ],
+    "C_Cpp.default.defines": [
+        "ARDUINO=10812",
+        "ARDUINO_ARCH_ESP32",
+        "ESP32"
+    ],
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}",
+        "--query-driver=C:/Users/araneus/.platformio/packages/toolchain-xtensa-esp32/bin/*"
+    ]
+}
