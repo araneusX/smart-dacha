@@ -4,7 +4,6 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-#include "config.h"
 #include "secrets.h"
 #include "sensors.h"
 
@@ -12,8 +11,8 @@ static const char *kLocationHeader = "Location";
 
 enum class HttpMethod { Post, Get };
 
-static bool requestOnce(HttpMethod method, const String &url, const String &payload, int *codeOut,
-                        String *bodyOut, String *locationOut) {
+static bool sendHttpOnce(HttpMethod method, const String &url, const String &payload, int *codeOut,
+                         String *bodyOut, String *locationOut) {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -50,7 +49,7 @@ static bool requestOnce(HttpMethod method, const String &url, const String &payl
   return true;
 }
 
-static bool postJson(const String &payload, String *response, bool fetchResult) {
+static bool postCloudPayload(const String &payload, String *response, bool fetchResult) {
   String url = APPS_SCRIPT_URL;
   url.trim();
   HttpMethod method = HttpMethod::Post;
@@ -61,7 +60,7 @@ static bool postJson(const String &payload, String *response, bool fetchResult) 
   for (int hop = 0; hop < 5; hop++) {
     location = "";
     body = "";
-    if (!requestOnce(method, url, payload, &code, &body, &location)) {
+    if (!sendHttpOnce(method, url, payload, &code, &body, &location)) {
       return false;
     }
     if (code >= 300 && code < 400 && location.length() > 0) {
@@ -86,30 +85,27 @@ static bool postJson(const String &payload, String *response, bool fetchResult) 
   return false;
 }
 
-static String sensorsJsonArray() {
-  JsonDocument doc;
-  JsonArray arr = doc.to<JsonArray>();
-  for (uint8_t i = 0; i < sensorsCount(); i++) {
-    const SensorReading *s = sensorsGet(i);
-    if (!s || !s->ok) {
+static void fillSensorsJson(JsonArray arr) {
+  const Sensors &sensors = getSensors();
+  for (uint8_t i = 0; i < sensors.count; i++) {
+    if (!sensors.items[i].ok) {
       continue;
     }
+    char hex[ROM_HEX_LEN + 1];
+    writeSensorRomAsHex(sensors.items[i].rom, hex);
     JsonObject o = arr.add<JsonObject>();
-    o["id"] = s->id;
-    o["t"] = s->t;
+    o["id"] = hex;
+    o["t"] = sensors.items[i].t;
   }
-  String out;
-  serializeJson(arr, out);
-  return out;
 }
 
-bool cloudPing(bool *isLive) {
+bool pingCloud(bool *isLive) {
   JsonDocument req;
   req["type"] = 0;
   String payload;
   serializeJson(req, payload);
   String response;
-  if (!postJson(payload, &response, true)) {
+  if (!postCloudPayload(payload, &response, true)) {
     return false;
   }
   JsonDocument doc;
@@ -124,14 +120,13 @@ bool cloudPing(bool *isLive) {
   return true;
 }
 
-bool cloudSend(uint8_t type) {
-  String payload = "{\"type\":";
-  payload += String(type);
-  payload += ",\"sensors\":";
-  payload += sensorsJsonArray();
-  payload += '}';
-  String response;
-  if (!postJson(payload, &response, false)) {
+bool sendCloud(uint8_t type) {
+  JsonDocument req;
+  req["type"] = type;
+  fillSensorsJson(req["sensors"].to<JsonArray>());
+  String payload;
+  serializeJson(req, payload);
+  if (!postCloudPayload(payload, nullptr, false)) {
     return false;
   }
   Serial.printf("cloud: type %u ok\n", type);

@@ -1,4 +1,5 @@
 #pragma once
 
-void telegramBegin();
-void telegramLoop();
+#include <Arduino.h>
+
+bool sendTelegramMessage(const String &text);

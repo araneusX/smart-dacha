@@ -1,83 +1,38 @@
 #include "app_wifi.h"
 
 #include <WiFi.h>
-#include <time.h>
 
+#include "app_time.h"
 #include "config.h"
 #include "secrets.h"
+#include "telegram.h"
 
-static bool wasDisconnected = false;
-static bool ntpStarted = false;
+static bool connected = false;
 static unsigned long lastAttempt = 0;
 
-static void wifiEnsureNtp() {
-  if (ntpStarted || WiFi.status() != WL_CONNECTED) {
+void initWifi() { WiFi.mode(WIFI_STA); }
+
+void pollWifi() {
+  if (isWifiConnected()) {
+    if (!connected) {
+      connected = true;
+      Serial.println("Wi-Fi connected");
+      sendTelegramMessage("Wi-Fi connected");
+    }
+    startNtp();
     return;
   }
-  configTime(TZ_OFFSET_SEC, 0, NTP_SERVER_1, NTP_SERVER_2);
-  ntpStarted = true;
-  Serial.println("NTP started");
-}
-
-void wifiBegin() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Wi-Fi connecting");
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
-    delay(250);
-    Serial.print('.');
+  if (connected) {
+    connected = false;
+    Serial.println("Wi-Fi connection lost");
   }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Wi-Fi IP: ");
-    Serial.println(WiFi.localIP());
-    wifiEnsureNtp();
-  } else {
-    Serial.println("Wi-Fi not connected yet");
-    wasDisconnected = true;
-  }
-}
-
-void wifiLoop() {
-  if (WiFi.status() == WL_CONNECTED) {
-    wifiEnsureNtp();
-    return;
-  }
-  wasDisconnected = true;
   unsigned long now = millis();
-  if (now - lastAttempt < WIFI_RECONNECT_MS) {
+  if (lastAttempt != 0 && now - lastAttempt < WIFI_RECONNECT_MS) {
     return;
   }
   lastAttempt = now;
-  Serial.println("Wi-Fi reconnect");
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
-bool wifiIsConnected() { return WiFi.status() == WL_CONNECTED; }
-
-bool wifiWasDisconnected() { return wasDisconnected; }
-
-void wifiClearDisconnectFlag() { wasDisconnected = false; }
-
-bool timeIsSynced() {
-  struct tm t;
-  return getLocalTime(&t, 0);
-}
-
-int historySlotId() {
-  struct tm t;
-  if (!getLocalTime(&t, 0)) {
-    return -1;
-  }
-  return t.tm_year * 366 + t.tm_yday * 144 + t.tm_hour * 6 + t.tm_min / 10;
-}
-
-bool historyMinute() {
-  struct tm t;
-  if (!getLocalTime(&t, 0)) {
-    return false;
-  }
-  return (t.tm_min % 10) == 0;
-}
+bool isWifiConnected() { return WiFi.status() == WL_CONNECTED; }

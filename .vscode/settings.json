@@ -7,7 +7,13 @@
         "${workspaceFolder}/include",
         "${workspaceFolder}/src",
         "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/cores/esp32",
-        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/variants/esp32"
+        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/variants/esp32",
+        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
+        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+        "C:/Users/araneus/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src",
+        "${workspaceFolder}/.pio/libdeps/esp32dev/ArduinoJson/src",
+        "${workspaceFolder}/.pio/libdeps/esp32dev/DallasTemperature",
+        "${workspaceFolder}/.pio/libdeps/esp32dev/OneWire"
     ],
     "C_Cpp.default.defines": [
         "ARDUINO=10812",

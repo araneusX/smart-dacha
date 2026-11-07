@@ -1,45 +1,45 @@
 #include <Arduino.h>
 #include <math.h>
 
+#include "app_time.h"
 #include "app_wifi.h"
 #include "cloud.h"
 #include "config.h"
 #include "heaters.h"
 #include "sensors.h"
-#include "telegram.h"
 
 static unsigned long lastSample = 0;
 static unsigned long lastPing = 0;
 static unsigned long lastLive = 0;
 static bool isLive = false;
-static int lastHistorySlot = -1;
+static int lastHistorySlot = 0;
 static float liveSentT[MAX_SENSORS];
 static bool liveSentOk[MAX_SENSORS];
 static uint8_t liveSentCount = 0;
 static bool liveHasSnapshot = false;
 
-static bool liveNeedsSend() {
-  if (!liveHasSnapshot || liveSentCount != sensorsCount()) {
+static bool hasLiveChanged() {
+  const Sensors &sensors = getSensors();
+  if (!liveHasSnapshot || liveSentCount != sensors.count) {
     return true;
   }
-  for (uint8_t i = 0; i < sensorsCount(); i++) {
-    const SensorReading *s = sensorsGet(i);
-    if (!s || s->ok != liveSentOk[i]) {
+  for (uint8_t i = 0; i < sensors.count; i++) {
+    if (sensors.items[i].ok != liveSentOk[i]) {
       return true;
     }
-    if (s->ok && fabsf(s->t - liveSentT[i]) >= LIVE_DELTA_C) {
+    if (sensors.items[i].ok && fabsf(sensors.items[i].t - liveSentT[i]) >= LIVE_DELTA_C) {
       return true;
     }
   }
   return false;
 }
 
-static void liveRemember() {
-  liveSentCount = sensorsCount();
+static void rememberLiveSent() {
+  const Sensors &sensors = getSensors();
+  liveSentCount = sensors.count;
   for (uint8_t i = 0; i < liveSentCount; i++) {
-    const SensorReading *s = sensorsGet(i);
-    liveSentOk[i] = s && s->ok;
-    liveSentT[i] = (s && s->ok) ? s->t : 0;
+    liveSentOk[i] = sensors.items[i].ok;
+    liveSentT[i] = sensors.items[i].ok ? sensors.items[i].t : 0;
   }
   liveHasSnapshot = true;
 }
@@ -49,72 +49,58 @@ void setup() {
   delay(200);
   Serial.println("smart-dch");
 
-  heatersBegin();
-  sensorsBegin();
-  wifiBegin();
-  telegramBegin();
+  initHeaters();
+  initSensors();
+  initWifi();
 
   lastSample = millis();
-  lastPing = 0;
-  lastLive = 0;
-  lastHistorySlot = -1;
 }
 
 void loop() {
-  wifiLoop();
-  if (!wifiIsConnected()) {
-    heatersFailsafeOff();
-  }
+  pollWifi();
 
   unsigned long now = millis();
 
   if (now - lastSample >= SAMPLE_INTERVAL_MS) {
     lastSample = now;
-    sensorsRead();
-    for (uint8_t i = 0; i < sensorsCount(); i++) {
-      const SensorReading *s = sensorsGet(i);
-      if (!s) {
-        continue;
+    pollSensors();
+    printSensorReadings();
+    pollHeaters();
+    if (isWifiConnected()) {
+      bool historySent = false;
+      const int slot = getHistorySlotId();
+      if (slot > lastHistorySlot) {
+        if (sendCloud(1)) {
+          lastHistorySlot = slot;
+          historySent = true;
+          lastLive = now;
+          rememberLiveSent();
+        }
       }
-      if (s->ok) {
-        Serial.printf("%s t=%.2f\n", s->id, s->t);
-      } else {
-        Serial.printf("%s disconnected\n", s->id);
+
+      if (!isLive) {
+        liveHasSnapshot = false;
+        lastLive = 0;
+      } else if (!historySent && (lastLive == 0 || now - lastLive >= LIVE_INTERVAL_MS) &&
+                 hasLiveChanged()) {
+        if (sendCloud(2)) {
+          lastLive = now;
+          rememberLiveSent();
+        }
       }
-    }
-    telegramLoop();
-    if (wifiIsConnected()) {
-      heatersLoop();
     }
   }
 
-  if (!wifiIsConnected()) {
+  if (!isWifiConnected()) {
     return;
   }
 
   if (lastPing == 0 || now - lastPing >= PING_INTERVAL_MS) {
     lastPing = now;
     bool live = false;
-    if (cloudPing(&live)) {
+    if (pingCloud(&live)) {
       isLive = live;
       Serial.printf("isLive=%s\n", isLive ? "true" : "false");
-    }
-  }
-
-  if (!isLive) {
-    liveHasSnapshot = false;
-    lastLive = 0;
-  } else if ((lastLive == 0 || now - lastLive >= LIVE_INTERVAL_MS) && liveNeedsSend()) {
-    if (cloudSend(2)) {
-      lastLive = now;
-      liveRemember();
-    }
-  }
-
-  const int slot = historySlotId();
-  if (slot >= 0 && slot != lastHistorySlot && historyMinute()) {
-    if (cloudSend(1)) {
-      lastHistorySlot = slot;
     }
   }
 }

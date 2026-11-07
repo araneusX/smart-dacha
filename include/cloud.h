@@ -2,5 +2,5 @@
 
 #include <stdint.h>
 
-bool cloudPing(bool *isLive);
-bool cloudSend(uint8_t type);
+bool pingCloud(bool *isLive);
+bool sendCloud(uint8_t type);

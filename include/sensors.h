@@ -2,16 +2,33 @@
 
 #include <stdint.h>
 
+#include "config.h"
+
 #define ROM_HEX_LEN 16
 
-struct SensorReading {
-  char id[ROM_HEX_LEN + 1];
-  float t;
-  bool ok;
+enum SensorStatus : uint8_t {
+  SENSOR_UNKNOWN = 0,
+  SENSOR_OK,
+  SENSOR_DISCONNECTED,
 };
 
-void sensorsBegin();
-uint8_t sensorsCount();
-void sensorsRead();
-const SensorReading *sensorsGet(uint8_t index);
-int sensorsFind(const char *id);
+struct SensorReading {
+  uint8_t rom[8];
+  uint8_t bus;
+  float t;
+  bool ok;
+  SensorStatus status;
+};
+
+struct Sensors {
+  SensorReading items[MAX_SENSORS];
+  uint8_t count;
+};
+
+void initSensors();
+void pollSensors();
+void printSensorReadings();
+const Sensors &getSensors();
+const SensorReading *findSensorByRom(const uint8_t rom[8]);
+bool parseSensorRomFromHex(const char *hex, uint8_t rom[8]);
+void writeSensorRomAsHex(const uint8_t rom[8], char out[ROM_HEX_LEN + 1]);

@@ -1,7 +1,7 @@
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-function b64ToBytes(b64) {
+function decodeBase64(b64) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) {
@@ -10,7 +10,7 @@ function b64ToBytes(b64) {
   return out;
 }
 
-function bytesToB64(bytes) {
+function encodeBase64(bytes) {
   let s = "";
   for (let i = 0; i < bytes.length; i++) {
     s += String.fromCharCode(bytes[i]);
@@ -18,7 +18,7 @@ function bytesToB64(bytes) {
   return btoa(s);
 }
 
-async function deriveKey(password, salt) {
+async function deriveAesKey(password, salt) {
   const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, [
     "deriveKey"
   ]);
@@ -34,26 +34,26 @@ async function deriveKey(password, salt) {
 async function encryptUrl(url, password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(password, salt);
+  const key = await deriveAesKey(password, salt);
   const cipher = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(url))
   );
   return btoa(
     JSON.stringify({
       v: 1,
-      s: bytesToB64(salt),
-      i: bytesToB64(iv),
-      c: bytesToB64(cipher)
+      s: encodeBase64(salt),
+      i: encodeBase64(iv),
+      c: encodeBase64(cipher)
     })
   );
 }
 
 async function decryptUrl(token, password) {
   const data = JSON.parse(atob(token));
-  const salt = b64ToBytes(data.s);
-  const iv = b64ToBytes(data.i);
-  const cipher = b64ToBytes(data.c);
-  const key = await deriveKey(password, salt);
+  const salt = decodeBase64(data.s);
+  const iv = decodeBase64(data.i);
+  const cipher = decodeBase64(data.c);
+  const key = await deriveAesKey(password, salt);
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
   return dec.decode(plain);
 }

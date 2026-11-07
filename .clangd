@@ -6,6 +6,12 @@ CompileFlags:
     - -DESP32
     - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/cores/esp32
     - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/variants/esp32
+    - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src
+    - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src
+    - -IC:/Users/araneus/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src
+    - -IC:/Users/araneus/Desktop/esp32/smart-dachs/.pio/libdeps/esp32dev/ArduinoJson/src
+    - -IC:/Users/araneus/Desktop/esp32/smart-dachs/.pio/libdeps/esp32dev/DallasTemperature
+    - -IC:/Users/araneus/Desktop/esp32/smart-dachs/.pio/libdeps/esp32dev/OneWire
     - -Iinclude
     - -Isrc
   Remove:

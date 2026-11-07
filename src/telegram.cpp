@@ -7,20 +7,12 @@
 #include "app_wifi.h"
 #include "config.h"
 #include "secrets.h"
-#include "sensors.h"
 
-#if ENABLE_TELEGRAM
+static constexpr bool kTelegramEnabled =
+    TELEGRAM_BOT_TOKEN[0] != STR_END && TELEGRAM_CHAT_ID[0] != STR_END;
 
-static bool present[MAX_SENSORS];
-static bool overheat[MAX_SENSORS];
-static bool inited = false;
-
-static bool tokenOk() {
-  return TELEGRAM_BOT_TOKEN[0] != '\0' && TELEGRAM_CHAT_ID[0] != '\0';
-}
-
-static bool sendMessage(const String &text) {
-  if (!tokenOk() || !wifiIsConnected()) {
+bool sendTelegramMessage(const String &text) {
+  if (!kTelegramEnabled || !isWifiConnected()) {
     return false;
   }
   String url = "https://api.telegram.org/bot";
@@ -47,55 +39,3 @@ static bool sendMessage(const String &text) {
   http.end();
   return code >= 200 && code < 300;
 }
-
-void telegramBegin() {
-  for (uint8_t i = 0; i < MAX_SENSORS; i++) {
-    present[i] = true;
-    overheat[i] = false;
-  }
-  inited = false;
-}
-
-void telegramLoop() {
-  if (!tokenOk()) {
-    return;
-  }
-
-  if (wifiWasDisconnected() && wifiIsConnected()) {
-    sendMessage("ESP32: Wi-Fi восстановлен");
-    wifiClearDisconnectFlag();
-  }
-
-  uint8_t n = sensorsCount();
-  for (uint8_t i = 0; i < n; i++) {
-    const SensorReading *s = sensorsGet(i);
-    if (!s) {
-      continue;
-    }
-    bool ok = s->ok;
-    if (inited && present[i] && !ok) {
-      sendMessage(String(s->id) + ": пропал");
-    }
-    if (inited && !present[i] && ok) {
-      sendMessage(String(s->id) + ": снова на связи");
-    }
-    present[i] = ok;
-
-    bool hot = ok && s->t > ALERT_TEMP_C;
-    if (hot && !overheat[i]) {
-      sendMessage(String(s->id) + ": " + String(s->t, 1) + " °C");
-    }
-    if (!hot && overheat[i]) {
-      sendMessage(String(s->id) + ": температура в норме");
-    }
-    overheat[i] = hot;
-  }
-  inited = true;
-}
-
-#else
-
-void telegramBegin() {}
-void telegramLoop() {}
-
-#endif
