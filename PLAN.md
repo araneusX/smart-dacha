@@ -6,9 +6,9 @@
 
 Проект `smart-dch` (папка `smart-dachs`): PlatformIO, board `esp32dev`, Arduino ([platformio.ini](platformio.ini)).
 
-**Железо:** ESP32 WROOM-32 (Type-C, CH340C, 30 pin, Wi-Fi); DS18B20 короткие и длинные 3–10 м; БП 5 В / 3 А; Wi-Fi в Интернет; протоплата; SSR×2 и нагреватели 220 В. Этапы 1–5 **сделаны**.
+**Железо:** ESP32 WROOM-32 (Type-C, CH340C, 30 pin, Wi-Fi); DS18B20 короткие и длинные 3–10 м; БП 5 В / 3 А; Wi-Fi в Интернет; протоплата; модуль 4 реле — GPIO25/26 нагрев, GPIO27 роутер, GPIO33 `RESERVE_RELAY_PIN` (в коде не используется). Этапы 1–5 **сделаны**, этап 6 — в коде.
 
-**Делает система:** опрос DS18B20; история каждые 10 мин в Google Sheets (по листу на ROM); live в браузере, пока открыт дашборд; Telegram-алерты, если заданы токен и chat id; регулятор нагрева по ROM (`HEATER_SENSOR_ID_*`).
+**Делает система:** опрос DS18B20; история каждые 10 мин в Google Sheets (по листу на ROM); live в браузере, пока открыт дашборд; Telegram-алерты, если заданы токен и chat id; регулятор нагрева по ROM (`HEATER_SENSOR_ID_*`); перезагрузка роутера при потере **Интернета** > 10 мин.
 
 **Стек:** свой код на ESP32; облако = Apps Script + Sheets; без VPS/VPN/HA. Дашборд — статические `dashboard/*.html`.
 
@@ -21,9 +21,13 @@ flowchart LR
   subgraph panel [Shield]
     DS1[DS18B20_bus1]
     DS2[DS18B20_bus2]
+    SSR[SSR_heaters]
+    RR[Router_relay]
     MCU[ESP32]
     DS1 --> MCU
     DS2 --> MCU
+    MCU --> SSR
+    MCU --> RR
   end
   MCU -->|"type 1 / 10 min"| AS[Apps_Script]
   MCU -->|"type 0 / 20s"| AS
@@ -46,6 +50,7 @@ flowchart LR
 - Дашборд: URL зашифрован, пароль на клиенте; heartbeat GET `?type=3` каждые 25 с; live GET `?type=2` каждые 3 с (JSONP).
 - UI дашборда — русский.
 - Нагреватели не зависят от Wi-Fi. Два канала: `HEATER_RELAY_PIN_1`/`_2` (GPIO25/26) + `HEATER_SENSOR_ID_1`/`_2` (16 hex). В `initHeaters` ROM один раз в 8 байт; `pollHeaters` — `findSensorByRom`. Нет пары пин + валидный ROM — канал не создаётся. Нет датчика или `ok == false` — выкл только этот канал. Гистерезис общий.
+- Роутер (`router.*`): проверка Интернета после каждого облачного ping — успех Apps Script = ок; иначе TCP `1.1.1.1:53`, иначе HTTPS `generate_204`. Нет Wi-Fi или все три неудачны ≥ 10 мин → одна попытка обесточить роутер (реле НЗ). Apps Script упал, а TCP/HTTPS ок → одно Telegram «Apps Script недоступен». После восстановления Интернета и попытки reboot — Telegram с длительностью обрыва. Пин `< 0` — выкл.
 
 ---
 
@@ -113,7 +118,8 @@ ESP32 шлёт POST с заголовком **`Content-Type: text/plain; charset
 | Облако | `cloud.*` | `pingCloud` (type 0), `sendCloud` (type 1/2) |
 | Telegram | `telegram.*` | `sendTelegramMessage`, если токен и chat id не пустые |
 | Нагреватели | `heaters.*` | `initHeaters` / `pollHeaters`; канал = `HEATER_RELAY_PIN` + ROM |
-| Цикл | `main.cpp` | `setup`/`loop`: 3 с опрос → нагреватели → облако если Wi-Fi; ping 20 с |
+| Роутер | `router.*` | `initRouter` / `pollRouter`; реле питания при потере Интернета |
+| Цикл | `main.cpp` | `setup`/`loop`: Wi-Fi → router → 3 с опрос/нагреватели → облако; ping 20 с |
 
 Допустимая температура датчика: `SENSOR_T_MIN_C`…`SENSOR_T_MAX_C` (−55…+125). Алерты Telegram: `ALERT_TEMP_HIGH_C` 100 °C, `ALERT_TEMP_LOW_C` 0 °C; пропажа/возврат датчика; Wi-Fi connected (обрыв только в Serial).
 
@@ -162,7 +168,7 @@ DATA ──┬── GPIO4 (шина 1) или GPIO16 (шина 2)
 
 Включено, если в `secrets.h` непустые `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`. Иначе `sendTelegramMessage` сразу `false`.
 
-События: Wi-Fi connected; датчик пропал / снова на связи; T выше high / ниже low; температура в норме. Входящий `/status` нет.
+События: Wi-Fi connected; датчик пропал / снова на связи; T выше high / ниже low; температура в норме; Apps Script недоступен при живом Интернете; роутер перезагружен (после восстановления Интернета). Входящий `/status` нет.
 
 ---
 
@@ -184,6 +190,20 @@ SSR×2 на GPIO25 / GPIO26 + GND; силовая 220 В через автома
 
 ---
 
+## Этап 6 — перезагрузка роутера
+
+**В коде.** Питание роутера через **нормально замкнутое** реле на `ROUTER_RELAY_PIN` (**GPIO27**). LOW на пине = катушка выкл = контакт замкнут = питание роутера ВКЛ; HIGH = размыкание = обесточивание.
+
+1. Раз в `PING_INTERVAL_MS`: `pingCloud`. Успех → Интернет ок, сброс флага алерта Apps Script. Неудача → TCP к `ROUTER_TCP_HOST:PORT`, иначе HTTPS GET `ROUTER_HTTPS_URL`. Любой запасной успех = Интернет ок; если при этом Apps Script упал — один раз Telegram «Apps Script недоступен».
+2. Нет Wi-Fi или все проверки неудачны → фиксируется `offlineSince`.
+3. Обрыв ≥ 10 мин, попытки ещё не было — катушка ВКЛ на 10 с, затем ВЫКЛ (одна попытка на обрыв).
+4. Wi-Fi reconnect ESP32 — как обычно.
+5. Интернет снова есть после попытки reboot — Telegram «Роутер был перезагружен, время не в сети: N секунд».
+
+Отключить: `#define ROUTER_RELAY_PIN -1`.
+
+---
+
 ## Порядок
 
-**Сделано:** прошивка, Apps Script, дашборд, Telegram-клиент, короткие и длинные 1-Wire (до 3 шин), нагреватели SSR×2.
+**Сделано:** прошивка, Apps Script, дашборд, Telegram-клиент, короткие и длинные 1-Wire (до 3 шин), нагреватели SSR×2, перезагрузка роутера по потере Интернета.

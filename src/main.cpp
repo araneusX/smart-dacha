@@ -6,6 +6,7 @@
 #include "cloud.h"
 #include "config.h"
 #include "heaters.h"
+#include "router.h"
 #include "sensors.h"
 
 static unsigned long lastSample = 0;
@@ -51,6 +52,7 @@ void setup() {
 
   initHeaters();
   initSensors();
+  initRouter();
   initWifi();
 
   lastSample = millis();
@@ -58,6 +60,7 @@ void setup() {
 
 void loop() {
   pollWifi();
+  pollRouter();
 
   unsigned long now = millis();
 
@@ -92,6 +95,7 @@ void loop() {
   }
 
   if (!isWifiConnected()) {
+    reportCloudPingResult(false);
     return;
   }
 
@@ -99,8 +103,11 @@ void loop() {
     lastPing = now;
     bool live = false;
     if (pingCloud(&live)) {
+      reportCloudPingResult(true);
       isLive = live;
       Serial.printf("isLive=%s\n", isLive ? "true" : "false");
+    } else {
+      reportCloudPingResult(false);
     }
   }
 }

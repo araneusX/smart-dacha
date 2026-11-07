@@ -9,7 +9,7 @@
  * One sheet per sensor (name = ROM): row 1 notes; row 2 timestamp | t; data from row 3
  *
  * ESP32: POST JSON (type 0/1/2). Browser: GET with type + optional callback= (JSONP).
- * doGet / doPost — имена платформы Apps Script, их нельзя менять.
+ * doGet / doPost are Apps Script entry points; do not rename.
  */
 
 var CACHE_LIVE = 'live';
