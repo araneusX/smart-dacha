@@ -43,7 +43,7 @@ flowchart LR
 - До **3** шин 1-Wire: `SENSOR_PIN_1`…`_3` ([include/config.h](include/config.h)). Пин `< 0` — слот пустой, пропускается. В `initSensors` заполненные пины собираются в `buses[]` (`busCount`). Раскладка: `SENSOR_PIN_1` GPIO4 — короткая, **4,7 кОм**; `_2` GPIO16 и `_3` GPIO17 — длинные, **2,2 кОм** (каждая к 3,3 В). До 10 датчиков суммарно (`MAX_SENSORS`).
 - Опрос и Serial — каждые **3 с** (`SAMPLE_INTERVAL_MS`). Поиск новых ROM: в `initSensors` и **после** измерения в `pollSensors`. Известные ROM не удаляются. `t` округляется до 0,1 °C (`roundf(t * 10) / 10`).
 - NTP (UTC+3): `startNtp()` после Wi-Fi, колбэк `sntp_set_time_sync_notification_cb`. Пока нет sync, `getHistorySlotId()` = **0**. Флаг `isLive` считает только Apps Script по TTL.
-- История: POST type 1, если `getHistorySlotId() > lastHistorySlot` (`lastHistorySlot` стартует с 0). Слот = `time() / 600` (10 мин Unix). Первая запись сразу после NTP, дальше при смене слота. Скрипт округляет timestamp вниз до `…:x0:00` и пишет на лист ROM. Type 1 обновляет live-кэш (даже без дашборда).
+- История: POST type 1 при смене 10‑мин слота (`getHistorySlotId()` = `time() / 600`). `lastHistorySlot` стартует с 0; после NTP текущий слот только запоминается (без отправки), первая запись — на границе следующего слота, дальше при каждой смене. Скрипт округляет timestamp вниз до `…:x0:00` и пишет на лист ROM. Type 1 обновляет live-кэш (даже без дашборда).
 - Live type 2: только если `isLive` и температура/состав сдвинулись (≥ 0,1 °C), не чаще 3 с; в том же цикле, что опрос. Если уже ушёл type 1 — type 2 в этом цикле не шлётся.
 - Ping type 0 каждые **20 с**.
 - Секрет API — URL Web App. JSON без ключа. `include/secrets.h` и `dashboard/config.js` в `.gitignore`.
@@ -154,7 +154,7 @@ DATA шина 3 ──┼── GPIO17
 
 Не соединять 5 В с 3V3; DATA не на 5 В как питание.
 
-**Приёмка:** листы с именами ROM (строка 1 пустая/заметки, строка 2 заголовки); первая история после NTP, дальше раз в 10 мин; timestamp `…:x0:00`; после heartbeat ESP шлёт type 2; без heartbeat `isLive` падает.
+**Приёмка:** листы с именами ROM (строка 1 пустая/заметки, строка 2 заголовки); первая история на границе следующего 10‑мин слота после NTP (не сразу после старта), дальше раз в 10 мин; timestamp `…:x0:00`; после heartbeat ESP шлёт type 2; без heartbeat `isLive` падает.
 
 ---
 

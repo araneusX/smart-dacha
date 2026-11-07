@@ -92,12 +92,16 @@ void loop() {
     if (isWifiConnected()) {
       bool historySent = false;
       const int slot = getHistorySlotId();
-      if (slot > lastHistorySlot) {
-        if (sendCloudOrAlert(1)) {
+      if (slot > 0) {
+        if (lastHistorySlot == 0) {
           lastHistorySlot = slot;
-          historySent = true;
-          lastLive = now;
-          rememberLiveSent();
+        } else if (slot > lastHistorySlot) {
+          if (sendCloudOrAlert(1)) {
+            lastHistorySlot = slot;
+            historySent = true;
+            lastLive = now;
+            rememberLiveSent();
+          }
         }
       }
 
