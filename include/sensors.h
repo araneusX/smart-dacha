@@ -18,6 +18,8 @@ struct SensorReading {
   float t;
   bool ok;
   SensorStatus status;
+  const char *label;
+  const char *id;
 };
 
 struct Sensors {

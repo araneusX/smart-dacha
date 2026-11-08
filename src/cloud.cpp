@@ -19,7 +19,8 @@ static bool sendHttpOnce(HttpMethod method, const String &url, const String &pay
   http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
   http.setTimeout(20000);
   http.setReuse(false);
-  if (!http.begin(client, url)) {
+  const bool ok = http.begin(client, url);
+  if (!ok) {
     Serial.println("cloud: begin failed");
     return false;
   }
@@ -60,7 +61,8 @@ static bool postCloudPayload(const String &payload, String *response, bool fetch
   for (int hop = 0; hop < 5; hop++) {
     location = "";
     body = "";
-    if (!sendHttpOnce(method, url, payload, &code, &body, &location)) {
+    const bool ok = sendHttpOnce(method, url, payload, &code, &body, &location);
+    if (!ok) {
       return false;
     }
     if (code >= 300 && code < 400 && location.length() > 0) {
@@ -91,10 +93,14 @@ static void fillSensorsJson(JsonArray arr) {
     if (!sensors.items[i].ok) {
       continue;
     }
-    char hex[ROM_HEX_LEN + 1];
-    writeSensorRomAsHex(sensors.items[i].rom, hex);
     JsonObject o = arr.add<JsonObject>();
-    o["id"] = hex;
+    if (sensors.items[i].id != nullptr) {
+      o["id"] = sensors.items[i].id;
+    } else {
+      char hex[ROM_HEX_LEN + 1];
+      writeSensorRomAsHex(sensors.items[i].rom, hex);
+      o["id"] = hex;
+    }
     o["t"] = sensors.items[i].t;
   }
 }
@@ -105,11 +111,12 @@ bool pingCloud(bool *isLive) {
   String payload;
   serializeJson(req, payload);
   String response;
-  if (!postCloudPayload(payload, &response, true)) {
+  const bool ok = postCloudPayload(payload, &response, true);
+  if (!ok) {
     return false;
   }
   JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, response);
+  const DeserializationError err = deserializeJson(doc, response);
   if (err) {
     Serial.printf("cloud: ping parse error %s\n", response.substring(0, 80).c_str());
     return false;
@@ -131,7 +138,8 @@ bool sendCloud(uint8_t type) {
   }
   String payload;
   serializeJson(req, payload);
-  if (!postCloudPayload(payload, nullptr, false)) {
+  const bool ok = postCloudPayload(payload, nullptr, false);
+  if (!ok) {
     return false;
   }
   Serial.printf("cloud: type %u ok\n", type);

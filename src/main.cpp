@@ -9,7 +9,6 @@
 #include "heaters.h"
 #include "router.h"
 #include "sensors.h"
-#include "telegram.h"
 
 static unsigned long lastSample = 0;
 static unsigned long lastPing = 0;
@@ -20,7 +19,6 @@ static float liveSentT[MAX_SENSORS];
 static bool liveSentOk[MAX_SENSORS];
 static uint8_t liveSentCount = 0;
 static bool liveHasSnapshot = false;
-static bool cloudAlertSent = false;
 
 static bool hasLiveChanged() {
   const Sensors &sensors = getSensors();
@@ -46,18 +44,6 @@ static void rememberLiveSent() {
     liveSentT[i] = sensors.items[i].ok ? sensors.items[i].t : 0;
   }
   liveHasSnapshot = true;
-}
-
-static bool sendCloudOrAlert(uint8_t type) {
-  if (sendCloud(type)) {
-    cloudAlertSent = false;
-    return true;
-  }
-  if (!cloudAlertSent) {
-    sendTelegramMessage("Облако недоступно");
-    cloudAlertSent = true;
-  }
-  return false;
 }
 
 void setup() {
@@ -96,7 +82,8 @@ void loop() {
         if (lastHistorySlot == 0) {
           lastHistorySlot = slot;
         } else if (slot > lastHistorySlot) {
-          if (sendCloudOrAlert(1)) {
+          const bool ok = sendCloud(1);
+          if (ok) {
             lastHistorySlot = slot;
             historySent = true;
             lastLive = now;
@@ -110,7 +97,8 @@ void loop() {
         lastLive = 0;
       } else if (!historySent && (lastLive == 0 || now - lastLive >= LIVE_INTERVAL_MS) &&
                  hasLiveChanged()) {
-        if (sendCloudOrAlert(2)) {
+        const bool ok = sendCloud(2);
+        if (ok) {
           lastLive = now;
           rememberLiveSent();
         }
@@ -119,16 +107,15 @@ void loop() {
   }
 
   if (!isWifiConnected()) {
-    reportCloudPingResult(false);
     return;
   }
 
   if (lastPing == 0 || now - lastPing >= PING_INTERVAL_MS) {
     lastPing = now;
     bool live = false;
-    if (pingCloud(&live)) {
+    const bool ok = pingCloud(&live);
+    if (ok) {
       reportCloudPingResult(true);
-      cloudAlertSent = false;
       isLive = live;
       Serial.printf("isLive=%s\n", isLive ? "true" : "false");
     } else {

@@ -11,11 +11,22 @@
 
 #if ROUTER_RELAY_PIN >= 0
 
-static void setRouterPower(bool on) { digitalWrite(ROUTER_RELAY_PIN, on ? LOW : HIGH); }
+static bool routerPowerOn = false;
+
+static void setRouterPower(bool on) {
+  if (routerPowerOn == on) {
+    return;
+  }
+  routerPowerOn = on;
+  digitalWrite(ROUTER_RELAY_PIN, on ? HIGH : LOW);
+  Serial.printf("router: relay power %s (GPIO%d %s)\n", on ? "on" : "off", ROUTER_RELAY_PIN,
+                on ? "HIGH" : "LOW");
+}
 
 static bool internetOk = false;
 static bool probeSeen = false;
 static bool appsScriptAlertSent = false;
+static uint8_t appsScriptFailCount = 0;
 
 static unsigned long offlineSince = 0;
 static bool rebootAttempted = false;
@@ -25,10 +36,11 @@ static bool probeTcp() {
   WiFiClient client;
   client.setTimeout(ROUTER_TCP_TIMEOUT_MS);
   IPAddress ip;
-  if (!ip.fromString(ROUTER_TCP_HOST)) {
+  bool ok = ip.fromString(ROUTER_TCP_HOST);
+  if (!ok) {
     return false;
   }
-  const bool ok = client.connect(ip, ROUTER_TCP_PORT, ROUTER_TCP_TIMEOUT_MS);
+  ok = client.connect(ip, ROUTER_TCP_PORT, ROUTER_TCP_TIMEOUT_MS);
   client.stop();
   return ok;
 }
@@ -40,7 +52,8 @@ static bool probeHttps() {
   http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
   http.setTimeout(ROUTER_HTTPS_TIMEOUT_MS);
   http.setReuse(false);
-  if (!http.begin(client, ROUTER_HTTPS_URL)) {
+  const bool ok = http.begin(client, ROUTER_HTTPS_URL);
+  if (!ok) {
     return false;
   }
   const int code = http.GET();
@@ -50,11 +63,13 @@ static bool probeHttps() {
 }
 
 static bool probeInternetFallbacks() {
-  if (probeTcp()) {
+  bool ok = probeTcp();
+  if (ok) {
     Serial.println("router: TCP probe ok");
     return true;
   }
-  if (probeHttps()) {
+  ok = probeHttps();
+  if (ok) {
     Serial.println("router: HTTPS probe ok");
     return true;
   }
@@ -71,13 +86,22 @@ void reportCloudPingResult(bool cloudOk) {
 
   if (cloudOk) {
     internetOk = true;
-    appsScriptAlertSent = false;
+    appsScriptFailCount = 0;
+    if (appsScriptAlertSent) {
+      sendTelegramMessage("Apps Script снова доступен");
+      Serial.println("router: Apps Script up");
+      appsScriptAlertSent = false;
+    }
     return;
   }
 
-  const bool fallbackOk = probeInternetFallbacks();
-  internetOk = fallbackOk;
-  if (fallbackOk && !appsScriptAlertSent) {
+  if (appsScriptFailCount < 255) {
+    appsScriptFailCount++;
+  }
+
+  const bool ok = probeInternetFallbacks();
+  internetOk = ok;
+  if (ok && !appsScriptAlertSent && appsScriptFailCount >= APPS_SCRIPT_FAILS_BEFORE_ALERT) {
     sendTelegramMessage("Apps Script недоступен");
     Serial.println("router: Apps Script down, internet ok");
     appsScriptAlertSent = true;
@@ -132,6 +156,7 @@ void pollRouter() {
 
   if (!rebootAttempted && now - offlineSince >= ROUTER_OFFLINE_BEFORE_REBOOT_MS) {
     Serial.println("router: power off for reboot");
+    armWifiConnectedAnnounce();
     setRouterPower(false);
     powerOffUntil = now + ROUTER_POWER_OFF_MS;
     rebootAttempted = true;

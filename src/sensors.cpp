@@ -9,6 +9,40 @@
 
 #include "telegram.h"
 
+struct SensorLabelEntry {
+  const char *romHex;
+  const char *label;
+  const char *id;
+};
+
+static const SensorLabelEntry kLabelMap[] = {
+#define S(romHex, label, id) {romHex, label, id},
+    SENSOR_LABEL_MAP
+#undef S
+};
+static constexpr size_t kLabelMapCount = sizeof(kLabelMap) / sizeof(kLabelMap[0]);
+
+static const SensorLabelEntry *findLabelEntry(const uint8_t rom[8]) {
+  for (size_t i = 0; i < kLabelMapCount; i++) {
+    uint8_t parsed[8];
+    const bool ok = parseSensorRomFromHex(kLabelMap[i].romHex, parsed);
+    if (!ok) {
+      continue;
+    }
+    if (memcmp(parsed, rom, 8) == 0) {
+      return &kLabelMap[i];
+    }
+  }
+  return nullptr;
+}
+
+static const char *nonEmptyOrNull(const char *s) {
+  if (s == nullptr || s[0] == STR_END) {
+    return nullptr;
+  }
+  return s;
+}
+
 struct OneWireBus {
   int pin;
   OneWire wire;
@@ -46,7 +80,8 @@ bool parseSensorRomFromHex(const char *hex, uint8_t rom[8]) {
     return false;
   }
   for (int i = 0; i < 8; i++) {
-    if (!parseHexByte(hex + i * 2, &rom[i])) {
+    const bool ok = parseHexByte(hex + i * 2, &rom[i]);
+    if (!ok) {
       return false;
     }
   }
@@ -69,6 +104,9 @@ static void addSensor(const DeviceAddress addr, uint8_t bus) {
   s->ok = false;
   s->t = NAN;
   s->status = SENSOR_UNKNOWN;
+  const SensorLabelEntry *entry = findLabelEntry(s->rom);
+  s->label = entry ? nonEmptyOrNull(entry->label) : nullptr;
+  s->id = entry ? nonEmptyOrNull(entry->id) : nullptr;
   sensors.count++;
   char hex[ROM_HEX_LEN + 1];
   writeSensorRomAsHex(s->rom, hex);
@@ -82,7 +120,11 @@ static void scanBus(uint8_t bus) {
   DeviceAddress addr;
   buses[bus].wire.reset_search();
   uint8_t attempts = 0;
-  while (sensors.count < MAX_SENSORS && attempts < 32 && buses[bus].wire.search(addr)) {
+  while (sensors.count < MAX_SENSORS && attempts < 32) {
+    const bool ok = buses[bus].wire.search(addr);
+    if (!ok) {
+      break;
+    }
     attempts++;
     if (OneWire::crc8(addr, 7) != addr[7]) {
       continue;
@@ -101,33 +143,24 @@ static void scanBuses() {
 }
 
 static void sendSensorAlert(const SensorReading *s, const String &text) {
+  if (s->label != nullptr) {
+    sendTelegramMessage(String(s->label) + text);
+    return;
+  }
   char hex[ROM_HEX_LEN + 1];
   writeSensorRomAsHex(s->rom, hex);
   sendTelegramMessage(String(hex) + text);
 }
 
-static void sendSensorAlerts(const SensorReading *s, SensorStatus prev, float prevT) {
-  if (prev != SENSOR_UNKNOWN) {
-    if (prev == SENSOR_OK && !s->ok) {
-      sendSensorAlert(s, ": пропал");
-    }
-    if (prev == SENSOR_DISCONNECTED && s->ok) {
-      sendSensorAlert(s, ": снова на связи");
-    }
+static void sendSensorAlerts(const SensorReading *s, SensorStatus prev) {
+  if (prev == SENSOR_UNKNOWN) {
+    return;
   }
-
-  const bool wasHigh = prev == SENSOR_OK && prevT > ALERT_TEMP_HIGH_C;
-  const bool wasLow = prev == SENSOR_OK && prevT < ALERT_TEMP_LOW_C;
-  const bool hot = s->ok && s->t > ALERT_TEMP_HIGH_C;
-  const bool cold = s->ok && s->t < ALERT_TEMP_LOW_C;
-  if (hot && !wasHigh) {
-    sendSensorAlert(s, ": " + String(s->t, 1) + " °C");
+  if (prev == SENSOR_OK && !s->ok) {
+    sendSensorAlert(s, ": связь потеряна");
   }
-  if (cold && !wasLow) {
-    sendSensorAlert(s, ": " + String(s->t, 1) + " °C");
-  }
-  if (s->ok && !hot && !cold && (wasHigh || wasLow)) {
-    sendSensorAlert(s, ": температура в норме");
+  if (prev == SENSOR_DISCONNECTED && s->ok) {
+    sendSensorAlert(s, ": снова на связи");
   }
 }
 
@@ -157,13 +190,12 @@ void pollSensors() {
     delay(DallasTemperature::millisToWaitForConversion(12));
     for (uint8_t i = 0; i < sensors.count; i++) {
       SensorReading *s = &sensors.items[i];
-      const float prevT = s->t;
       const SensorStatus prev = s->status;
       const float t = buses[s->bus].dallas.getTempC(s->rom);
       s->ok = (t > SENSOR_T_MIN_C && t < SENSOR_T_MAX_C);
       s->t = s->ok ? roundf(t * 10.0f) / 10.0f : NAN;
       s->status = s->ok ? SENSOR_OK : SENSOR_DISCONNECTED;
-      sendSensorAlerts(s, prev, prevT);
+      sendSensorAlerts(s, prev);
     }
   }
   scanBuses();

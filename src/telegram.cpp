@@ -32,7 +32,8 @@ bool sendTelegramMessage(const String &text) {
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setTimeout(15000);
   http.setReuse(false);
-  if (!http.begin(client, url)) {
+  const bool ok = http.begin(client, url);
+  if (!ok) {
     return false;
   }
   http.addHeader("Content-Type", "application/json");

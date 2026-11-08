@@ -8,16 +8,22 @@
 #include "telegram.h"
 
 static bool connected = false;
+static bool announceConnected = true;
 static unsigned long lastAttempt = 0;
 
 void initWifi() { WiFi.mode(WIFI_STA); }
+
+void armWifiConnectedAnnounce() { announceConnected = true; }
 
 void pollWifi() {
   if (isWifiConnected()) {
     if (!connected) {
       connected = true;
       Serial.println("Wi-Fi connected");
-      sendTelegramMessage("Wi-Fi connected");
+      if (announceConnected) {
+        sendTelegramMessage("Wi-Fi connected");
+        announceConnected = false;
+      }
     }
     startNtp();
     return;
@@ -25,7 +31,6 @@ void pollWifi() {
   if (connected) {
     connected = false;
     Serial.println("Wi-Fi connection lost");
-    sendTelegramMessage("Wi-Fi connection lost");
   }
   unsigned long now = millis();
   if (lastAttempt != 0 && now - lastAttempt < WIFI_RECONNECT_MS) {

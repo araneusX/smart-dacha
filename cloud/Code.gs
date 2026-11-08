@@ -6,7 +6,7 @@
  * Who has access: Anyone
  *
  * Open the spreadsheet → Extensions → Apps Script, paste this file.
- * One sheet per sensor (name = ROM): row 1 notes; row 2 timestamp | t; data from row 3
+ * One sheet per sensor (name = JSON id): row 1 notes; row 2 timestamp | t; data from row 3
  *
  * ESP32: POST JSON (type 0/1/2). Browser: GET with type + optional callback= (JSONP).
  * doGet / doPost are Apps Script entry points; do not rename.
