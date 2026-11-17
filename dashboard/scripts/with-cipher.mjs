@@ -75,12 +75,12 @@ const url = (process.env.DASHBOARD_API_URL || "").trim();
 const password = process.env.DASHBOARD_PASSWORD || "";
 if (!url || !password) {
   console.error(
-    "Задайте DASHBOARD_API_URL и DASHBOARD_PASSWORD в dashboard/.env или в env процесса.",
+    "Set DASHBOARD_API_URL and DASHBOARD_PASSWORD in dashboard/.env or the process env.",
   );
   process.exit(1);
 }
 if (!/^https:\/\//i.test(url)) {
-  console.error("DASHBOARD_API_URL должен начинаться с https://");
+  console.error("DASHBOARD_API_URL must start with https://");
   process.exit(1);
 }
 
@@ -88,7 +88,7 @@ process.env.PUBLIC_DASHBOARD_CIPHER = await encryptUrl(url, password);
 
 const command = process.argv[2];
 if (command !== "dev" && command !== "build") {
-  console.error("Использование: node scripts/with-cipher.mjs <dev|build>");
+  console.error("Usage: node scripts/with-cipher.mjs <dev|build>");
   process.exit(1);
 }
 

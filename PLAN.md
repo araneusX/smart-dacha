@@ -1,20 +1,18 @@
 # План: smart-dch — мониторинг температуры
 
-Источник истины — **код** в этом репозитории. Этот файл описывает текущее поведение системы. При правках синхронизировать [Cursor-план](c:\Users\araneus\.cursor\plans\esp32_temp_monitoring_408690d3.plan.md).
-
 ## Контекст и цель
 
 Проект `smart-dch` (папка `smart-dachs`): PlatformIO, board `esp32dev`, Arduino ([platformio.ini](platformio.ini)).
 
-**Железо:** ESP32 WROOM-32 (Type-C, CH340C, 30 pin, Wi-Fi); DS18B20 короткие и длинные 3–10 м; БП 5 В / 3 А; Wi-Fi в Интернет; протоплата; модуль 4 реле — GPIO25/26 нагрев, GPIO27 роутер, GPIO33 `RESERVE_RELAY_PIN` (в коде не используется). Этапы 1–5 **сделаны**, этап 6 — в коде.
+**Железо:** ESP32 WROOM-32 (Type-C, CH340C, 30 pin, Wi-Fi); DS18B20 короткие и длинные 3–10 м; БП 5 В / 3 А; Wi-Fi в Интернет; протоплата; модуль 4 реле — GPIO25/26 нагрев, GPIO27 роутер, GPIO33 `RESERVE_RELAY_PIN` (зарезервирован, не используется).
 
 **Делает система:** опрос DS18B20; история каждые 10 мин в Google Sheets (лист = `id` из карты или ROM); live в браузере, пока открыт дашборд; Telegram-алерты, если заданы токен и chat id; регулятор нагрева по ROM (`HEATER_SENSOR_ROM_*`); перезагрузка роутера при потере **Интернета** > 10 мин.
 
-**Стек:** свой код на ESP32; облако = Apps Script + Sheets; без VPS/VPN/HA. Дашборд — Astro + Tailwind (`dashboard/`), деплой GitHub Pages.
+**Стек:** прошивка на ESP32; облако = Apps Script + Sheets; без VPS/VPN/HA. Дашборд — Astro + Tailwind (`dashboard/`), деплой GitHub Pages.
 
 ---
 
-## Архитектура (как в коде)
+## Архитектура
 
 ```mermaid
 flowchart LR
@@ -32,7 +30,7 @@ flowchart LR
   MCU -->|"type 1 / 10 min"| AS[Apps_Script]
   MCU -->|"type 0 / 20s"| AS
   MCU -->|"type 2 if isLive"| AS
-  AS --> Sheets[Sheets_per_ROM]
+  AS --> Sheets[Sheets_per_id]
   AS --> Cache[Cache_live_and_TTL]
   Browser -->|"GET type 3 heartbeat"| AS
   Browser -->|"GET type 2 live"| AS
@@ -40,15 +38,15 @@ flowchart LR
   MCU --> TG[Telegram]
 ```
 
-- До **3** шин 1-Wire: `SENSOR_PIN_1`…`_3` ([include/config.h](include/config.h)). Пин `< 0` — слот пустой, пропускается. В `initSensors` заполненные пины собираются в `buses[]` (`busCount`). Раскладка: `SENSOR_PIN_1` GPIO4 — короткая, **4,7 кОм**; `_2` GPIO16 и `_3` GPIO17 — длинные, **2,2 кОм** (каждая к 3,3 В). До 10 датчиков суммарно (`MAX_SENSORS`).
+- До **3** шин 1-Wire: `SENSOR_PIN_1`…`_3` ([include/config.h](include/config.h)). Пин `< 0` — слот пустой, пропускается. В `initSensors` заполненные пины собираются в `buses[]` (`busCount`). Раскладка: `SENSOR_PIN_1` GPIO4 — короткая, **4,7 кОм**; `_2` GPIO16 и `_3` GPIO17 — длинные, **2,2 кОм** (каждая к 3,3 В). До **6** датчиков суммарно (`MAX_SENSORS`).
 - Опрос и Serial — каждые **3 с** (`SAMPLE_INTERVAL_MS`). Поиск новых ROM: в `initSensors` и **после** измерения в `pollSensors`. Известные ROM не удаляются. `t` округляется до 0,1 °C (`roundf(t * 10) / 10`).
 - NTP (UTC+3): `startNtp()` после Wi-Fi, колбэк `sntp_set_time_sync_notification_cb`. Пока нет sync, `getHistorySlotId()` = **0**. Флаг `isLive` считает только Apps Script по TTL.
-- История: POST type 1 при смене 10‑мин слота (`getHistorySlotId()` = `time() / 600`). `lastHistorySlot` стартует с 0; после NTP текущий слот только запоминается (без отправки), первая запись — на границе следующего слота, дальше при каждой смене. Скрипт округляет timestamp вниз до `…:x0:00` и пишет на лист ROM. Type 1 обновляет live-кэш (даже без дашборда).
+- История: POST type 1 при смене 10‑мин слота (`getHistorySlotId()` = `time() / 600`). `lastHistorySlot` стартует с 0; после NTP текущий слот только запоминается (без отправки), первая запись — на границе следующего слота, дальше при каждой смене. Скрипт округляет timestamp вниз до `…:x0:00` и пишет на лист = JSON `id`. Type 1 обновляет live-кэш (даже без дашборда).
 - Live type 2: только если `isLive` и температура/состав сдвинулись (≥ 0,1 °C), не чаще 3 с; в том же цикле, что опрос. Если уже ушёл type 1 — type 2 в этом цикле не шлётся.
 - Ping type 0 каждые **20 с**.
 - Секрет API — URL Web App. JSON без ключа. `include/secrets.h` в `.gitignore`. Дашборд: `DASHBOARD_API_URL` + `DASHBOARD_PASSWORD` в `.env` / GitHub Secrets; prebuild шифрует → `PUBLIC_DASHBOARD_CIPHER` в статике.
-- Дашборд: URL зашифрован, пароль на клиенте; heartbeat GET `?type=3` каждые 25 с; live GET `?type=2` каждые 3 с (JSONP).
-- UI дашборда — русский, liquid glass; `/` live, `/settings` — имя/скрытие датчиков (localStorage).
+- Дашборд: URL зашифрован, пароль на клиенте; после входа расшифрованный URL и live-снимок — в `sessionStorage` до конца вкладки; heartbeat GET `?type=3` каждые 25 с; live GET `?type=2` каждые 3 с (JSONP).
+- UI дашборда — русский, liquid glass; `/` live, `/settings` — имя/скрытие датчиков (`localStorage`; сохранение при уходе со страницы).
 - Карта датчиков `SENSOR_LABEL_MAP`: `S("ROM16hex", "label", "id")`. При обнаружении → `SensorReading.label` / `.id` (пустые строки → `nullptr`). Telegram: `label` или ROM hex. Облако: JSON `id` = map `id` или ROM hex.
 - Нагреватели не зависят от Wi-Fi. Два канала: `HEATER_RELAY_PIN_1`/`_2` (GPIO25/26) + `HEATER_SENSOR_ROM_1`/`_2` (16 hex). В `initHeaters` ROM один раз в 8 байт; `pollHeaters` — `findSensorByRom`. Нет пары пин + валидный ROM — канал не создаётся. Нет датчика или `ok == false` — выкл только этот канал. Гистерезис общий.
 - Роутер (`router.*`): проверка Интернета после каждого облачного ping — успех Apps Script = ок; иначе TCP `1.1.1.1:53`, иначе HTTPS `generate_204`. Нет Wi-Fi или все три неудачны ≥ 10 мин → одна попытка обесточить роутер (реле НЗ). Apps Script: после `APPS_SCRIPT_FAILS_BEFORE_ALERT` (3) неудачных ping подряд при живом Интернете — Telegram «Apps Script недоступен»; при восстановлении — «Apps Script снова доступен». После reboot роутера — Telegram с длительностью обрыва. Пин `< 0` — выкл.
@@ -209,18 +207,45 @@ DATA шина 3 ──┼── GPIO17
 
 ---
 
-## Этап 2 — дашборд (сделано)
+## Этап 2 — дашборд
 
 Astro + Tailwind в [dashboard/](dashboard/); Pages: [.github/workflows/deploy-dashboard.yml](.github/workflows/deploy-dashboard.yml).
 
-- `/` — live-карточки; `/settings` — имя/скрытие датчиков.
-- Prebuild (`scripts/with-cipher.mjs`): URL+пароль → cipher в бандл; пароль на клиенте расшифровывает URL.
+- `/` — live-карточки; `/settings` — имя/скрытие датчиков (`localStorage`; сохранение при уходе со страницы).
+- Prebuild (`scripts/with-cipher.mjs`): URL+пароль → cipher в бандл; пароль на клиенте расшифровывает URL; в сессии вкладки хранится расшифрованный URL и последний live-снимок (`sessionStorage`).
 - Heartbeat 25 с, live 3 с, JSONP; история только в Sheets.
-- `BASE_PATH` / `SITE_URL` — заглушка `/smart-dachs` локально; в CI из имени репо (или vars).
+- Фон: геометрический дефолт; после входа — Unsplash (`UNSPLASH_QUERY` в `unsplashBg.ts` + сезон/время суток; предзагрузка на экране входа, base64 в `sessionStorage`).
+- `BASE_PATH` / `SITE_URL` — локально `/smart-dachs`; в CI из `github.repository_owner` и имени репо.
+
+### Как настроить репозиторий GitHub
+
+1. Создайте репозиторий на GitHub (например `smart-dachs`) и запушьте код. Ветка по умолчанию — `main` или `master` (workflow слушает обе).
+2. **Pages:** Settings → Pages → **Source** = **GitHub Actions** (не «Deploy from a branch»).
+3. **Secrets** (Settings → Secrets and variables → Actions → Secrets):
+
+| Secret | Назначение |
+|--------|------------|
+| `DASHBOARD_API_URL` | URL Web App Apps Script (`…/exec`) |
+| `DASHBOARD_PASSWORD` | Пароль для шифрования URL при сборке (= пароль входа на сайте) |
+
+4. **Variables** (тот же раздел → Variables):
+
+| Variable | Назначение | По умолчанию в CI |
+|----------|------------|-------------------|
+| `UNSPLASH_ACCESS_KEY` | Access Key приложения Unsplash ([developers](https://unsplash.com/oauth/applications)); Secret Key не нужен | пусто → без Unsplash-фона |
+
+`SITE_URL` / `BASE_PATH` в CI задаёт workflow сам: `https://<owner>.github.io` и `/<имя-репо>`.
+
+5. Запустите деплой: push в `dashboard/**` или workflow **Deploy dashboard** → Run workflow. В Actions дождитесь зелёного `build` + `deploy`.
+6. Сайт: `https://<owner>.github.io/<имя-репо>/` (пример: `https://araneus.github.io/smart-dachs/`). Первый заход — вход по `DASHBOARD_PASSWORD`.
+
+**Локально:** `dashboard/.env` из [dashboard/.env.example](dashboard/.env.example) (`DASHBOARD_API_URL`, `DASHBOARD_PASSWORD`, `PUBLIC_UNSPLASH_ACCESS_KEY`) → `cd dashboard && npm ci && npm run dev` или `npm run build`. Файл `.env` в git не коммитить.
+
+**Не коммитить:** `include/secrets.h`, `dashboard/.env`, `dashboard/node_modules`, `dashboard/dist`.
 
 ---
 
-## Этап 3 — Telegram (код готов)
+## Этап 3 — Telegram
 
 Включено, если в `secrets.h` непустые `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`. Иначе `sendTelegramMessage` сразу `false`.
 
@@ -248,7 +273,7 @@ Astro + Tailwind в [dashboard/](dashboard/); Pages: [.github/workflows/deploy-d
 
 ---
 
-## Этап 4 — длинные линии (сделано)
+## Этап 4 — длинные линии
 
 До 3 шин (`SENSOR_PIN_1`…`_3`). Короткие и длинные на **разных GPIO**; DATA шин не соединять. Фикс: GPIO4 / 4,7 кОм — короткие; GPIO16 и GPIO17 / 2,2 кОм — длинные (каждая к 3,3 В).
 
@@ -258,17 +283,15 @@ Astro + Tailwind в [dashboard/](dashboard/); Pages: [.github/workflows/deploy-d
 
 ---
 
-## Этап 5 — нагреватели (сделано)
+## Этап 5 — нагреватели
 
-Реле (модуль **active-LOW**): GPIO25 / GPIO26; вкл нагрева = **LOW** на IN, выкл = **HIGH**. Силовая 220 В через NO–COM и автомат. Канал = `HEATER_RELAY_PIN_n` + `HEATER_SENSOR_ROM_n` (16 hex). Label/id — `SENSOR_LABEL_MAP`. `pollHeaters` после `pollSensors`, без Wi-Fi. Гистерезис: вкл ниже `HEATER_ON_BELOW_C`, выкл выше `HEATER_OFF_ABOVE_C`. Нет датчика — выкл только этот канал. Алерты `ALERT_TEMP_HIGH_C` / `ALERT_TEMP_LOW_C` — только здесь, в тексте статус обогрева.
-
-По желанию позже: пороги в NVS, состояние реле в live, токены Telegram, новый деплой `code.gs` при смене скрипта.
+Реле (модуль **active-LOW**): GPIO25 / GPIO26; вкл нагрева = **LOW** на IN, выкл = **HIGH**. Силовая 220 В через NO–COM и автомат. Канал = `HEATER_RELAY_PIN_n` + `HEATER_SENSOR_ROM_n` (16 hex). Label/id — `SENSOR_LABEL_MAP`. `pollHeaters` после `pollSensors`, без Wi-Fi. Гистерезис: вкл ниже `HEATER_ON_BELOW_C` (5 °C), выкл выше `HEATER_OFF_ABOVE_C` (10 °C). Нет датчика — выкл только этот канал. Алерты `ALERT_TEMP_HIGH_C` (50 °C) / `ALERT_TEMP_LOW_C` (0 °C) — только здесь, в тексте статус обогрева.
 
 ---
 
 ## Этап 6 — перезагрузка роутера
 
-**В коде.** Питание роутера через **NC–COM** на `ROUTER_RELAY_PIN` (**GPIO27**), модуль **active-LOW**. Норма: **HIGH** на IN = катушка выкл = НЗ замкнут = роутер питается; импульс reboot: **LOW** = катушка вкл = НЗ разомкнут = обесточивание.
+Питание роутера через **NC–COM** на `ROUTER_RELAY_PIN` (**GPIO27**), модуль **active-LOW**. Норма: **HIGH** на IN = катушка выкл = НЗ замкнут = роутер питается; импульс reboot: **LOW** = катушка вкл = НЗ разомкнут = обесточивание.
 
 1. Раз в `PING_INTERVAL_MS`: `pingCloud`. Успех → Интернет ок; если ранее слали «недоступен» — Telegram «Apps Script снова доступен», сброс счётчика. Неудача → +1 к счётчику, TCP/HTTPS fallback; при живом Интернете и счётчике ≥ `APPS_SCRIPT_FAILS_BEFORE_ALERT` — один раз «Apps Script недоступен».
 2. Нет Wi-Fi или все проверки неудачны → фиксируется `offlineSince`.
@@ -277,9 +300,3 @@ Astro + Tailwind в [dashboard/](dashboard/); Pages: [.github/workflows/deploy-d
 5. Интернет снова есть после попытки reboot — Telegram «Роутер был перезагружен, время не в сети: N секунд».
 
 Отключить: `#define ROUTER_RELAY_PIN -1`.
-
----
-
-## Порядок
-
-**Сделано:** прошивка, Apps Script, дашборд, Telegram-клиент, короткие и длинные 1-Wire (до 3 шин), нагреватели SSR×2, перезагрузка роутера по потере Интернета.

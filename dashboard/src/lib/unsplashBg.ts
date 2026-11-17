@@ -173,6 +173,9 @@ async function fetchAsDataUrl(imageUrl: string): Promise<string> {
   });
 }
 
+/** Base Unsplash search; season/day-part appended at fetch time. */
+const UNSPLASH_QUERY = "small cottage countryside house poor nature";
+
 /** Fetch Unsplash photo and return background with base64 data URL. */
 export async function fetchUnsplashBackground(): Promise<UnsplashBg | null> {
   const key = import.meta.env.PUBLIC_UNSPLASH_ACCESS_KEY?.trim();
@@ -180,8 +183,7 @@ export async function fetchUnsplashBackground(): Promise<UnsplashBg | null> {
     return null;
   }
 
-  const base = import.meta.env.PUBLIC_UNSPLASH_QUERY?.trim() || "cottage countryside house";
-  const query = `${base} ${localTimeOfDayQuery()}`;
+  const query = `${UNSPLASH_QUERY} ${localTimeOfDayQuery()}`;
 
   const cached = readSessionCache(query);
   if (cached) {
