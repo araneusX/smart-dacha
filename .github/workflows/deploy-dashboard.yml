@@ -1,0 +1,63 @@
+name: Deploy dashboard
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/deploy-dashboard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        env:
+          DASHBOARD_API_URL: ${{ secrets.DASHBOARD_API_URL }}
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+          PUBLIC_UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          PUBLIC_UNSPLASH_QUERY: ${{ vars.UNSPLASH_QUERY }}
+        run: |
+          export SITE_URL="${SITE_URL:-https://${{ github.repository_owner }}.github.io}"
+          export BASE_PATH="${BASE_PATH:-/${{ github.event.repository.name }}}"
+          if [ -n "${{ vars.SITE_URL }}" ]; then export SITE_URL="${{ vars.SITE_URL }}"; fi
+          if [ -n "${{ vars.BASE_PATH }}" ]; then export BASE_PATH="${{ vars.BASE_PATH }}"; fi
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

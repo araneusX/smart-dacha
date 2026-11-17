@@ -1,0 +1,117 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+    overflow-x: clip;
+  }
+
+  body {
+    @apply min-h-screen overflow-x-hidden font-sans text-white;
+    color: #fff;
+    background-color: #087a86;
+    text-shadow: 0 1px 2px rgba(8, 28, 48, 0.35);
+  }
+
+  [data-default-bg]::after,
+  [data-unsplash-bg]::after {
+    content: "";
+    @apply absolute inset-0;
+    background: rgba(8, 24, 40, 0.18);
+  }
+
+  /* Mild scrim under content; stronger shade outside the column */
+  .content-shell {
+    position: relative;
+    isolation: isolate;
+    background: rgba(6, 18, 32, 0.28);
+    box-shadow: 0 0 0 100vmax rgba(4, 12, 22, 0.62);
+  }
+
+  #loginStage[hidden],
+  #panel[hidden],
+  #emptyState[hidden],
+  #sensorEmpty[hidden],
+  [data-unsplash-credit][hidden] {
+    display: none !important;
+  }
+
+  liquid-glass {
+    display: block;
+  }
+
+  liquid-glass[inline] {
+    display: inline-block;
+  }
+
+  liquid-glass.sensor-tile {
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  liquid-glass.sensor-tile > .glass-content {
+    height: 100%;
+  }
+}
+
+@layer components {
+  /* Outer shell — suraj-xd/liquid-glass */
+  .glass-panel {
+    @apply relative overflow-hidden rounded-3xl;
+    box-shadow:
+      0 6px 6px rgba(0, 0, 0, 0.2),
+      0 0 20px rgba(0, 0, 0, 0.1);
+  }
+
+  .glass-fx-blur {
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    filter: url(#glass-distortion);
+    isolation: isolate;
+  }
+
+  .glass-fx-tint {
+    background: rgba(120, 175, 235, 0.05);
+  }
+
+  .glass-fx-shine {
+    box-shadow:
+      inset 2px 2px 1px 0 rgba(210, 235, 255, 0.28),
+      inset -1px -1px 1px 1px rgba(180, 215, 255, 0.14);
+  }
+
+  .glass-field {
+    @apply w-full rounded-2xl border border-sky-100/50 bg-slate-950/25 px-4 py-3 text-white outline-none
+      transition placeholder:text-white/60 focus:border-sky-100/80 focus:bg-slate-950/35;
+    text-shadow: none;
+  }
+
+  .glass-btn {
+    @apply inline-flex items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold
+      text-slate-900 transition hover:bg-white/95 active:scale-[0.98];
+    text-shadow: none;
+  }
+
+  .glass-btn-secondary {
+    @apply px-4 py-2.5 text-sm font-semibold text-white no-underline;
+  }
+}
+
+@layer utilities {
+  .text-ink {
+    color: #ffffff;
+  }
+
+  .text-ink-soft {
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .text-ink-mute {
+    color: rgba(230, 242, 255, 0.78);
+  }
+}

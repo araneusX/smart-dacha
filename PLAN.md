@@ -10,7 +10,7 @@
 
 **Делает система:** опрос DS18B20; история каждые 10 мин в Google Sheets (лист = `id` из карты или ROM); live в браузере, пока открыт дашборд; Telegram-алерты, если заданы токен и chat id; регулятор нагрева по ROM (`HEATER_SENSOR_ROM_*`); перезагрузка роутера при потере **Интернета** > 10 мин.
 
-**Стек:** свой код на ESP32; облако = Apps Script + Sheets; без VPS/VPN/HA. Дашборд — статические `dashboard/*.html`.
+**Стек:** свой код на ESP32; облако = Apps Script + Sheets; без VPS/VPN/HA. Дашборд — Astro + Tailwind (`dashboard/`), деплой GitHub Pages.
 
 ---
 
@@ -46,9 +46,9 @@ flowchart LR
 - История: POST type 1 при смене 10‑мин слота (`getHistorySlotId()` = `time() / 600`). `lastHistorySlot` стартует с 0; после NTP текущий слот только запоминается (без отправки), первая запись — на границе следующего слота, дальше при каждой смене. Скрипт округляет timestamp вниз до `…:x0:00` и пишет на лист ROM. Type 1 обновляет live-кэш (даже без дашборда).
 - Live type 2: только если `isLive` и температура/состав сдвинулись (≥ 0,1 °C), не чаще 3 с; в том же цикле, что опрос. Если уже ушёл type 1 — type 2 в этом цикле не шлётся.
 - Ping type 0 каждые **20 с**.
-- Секрет API — URL Web App. JSON без ключа. `include/secrets.h` и `dashboard/config.js` в `.gitignore`.
+- Секрет API — URL Web App. JSON без ключа. `include/secrets.h` в `.gitignore`. Дашборд: `DASHBOARD_API_URL` + `DASHBOARD_PASSWORD` в `.env` / GitHub Secrets; prebuild шифрует → `PUBLIC_DASHBOARD_CIPHER` в статике.
 - Дашборд: URL зашифрован, пароль на клиенте; heartbeat GET `?type=3` каждые 25 с; live GET `?type=2` каждые 3 с (JSONP).
-- UI дашборда — русский.
+- UI дашборда — русский, liquid glass; `/` live, `/settings` — имя/скрытие датчиков (localStorage).
 - Карта датчиков `SENSOR_LABEL_MAP`: `S("ROM16hex", "label", "id")`. При обнаружении → `SensorReading.label` / `.id` (пустые строки → `nullptr`). Telegram: `label` или ROM hex. Облако: JSON `id` = map `id` или ROM hex.
 - Нагреватели не зависят от Wi-Fi. Два канала: `HEATER_RELAY_PIN_1`/`_2` (GPIO25/26) + `HEATER_SENSOR_ROM_1`/`_2` (16 hex). В `initHeaters` ROM один раз в 8 байт; `pollHeaters` — `findSensorByRom`. Нет пары пин + валидный ROM — канал не создаётся. Нет датчика или `ok == false` — выкл только этот канал. Гистерезис общий.
 - Роутер (`router.*`): проверка Интернета после каждого облачного ping — успех Apps Script = ок; иначе TCP `1.1.1.1:53`, иначе HTTPS `generate_204`. Нет Wi-Fi или все три неудачны ≥ 10 мин → одна попытка обесточить роутер (реле НЗ). Apps Script: после `APPS_SCRIPT_FAILS_BEFORE_ALERT` (3) неудачных ping подряд при живом Интернете — Telegram «Apps Script недоступен»; при восстановлении — «Apps Script снова доступен». После reboot роутера — Telegram с длительностью обрыва. Пин `< 0` — выкл.
@@ -211,11 +211,12 @@ DATA шина 3 ──┼── GPIO17
 
 ## Этап 2 — дашборд (сделано)
 
-[dashboard/index.html](dashboard/index.html), [encrypt.html](dashboard/encrypt.html), [crypto.js](dashboard/crypto.js), gitignored `config.js` (пример: `config.example.js`).
+Astro + Tailwind в [dashboard/](dashboard/); Pages: [.github/workflows/deploy-dashboard.yml](.github/workflows/deploy-dashboard.yml).
 
-- Русский UI: таблица id и t; история только в Sheets.
-- Пароль расшифровывает URL.
-- Heartbeat 25 с, live 3 с, JSONP.
+- `/` — live-карточки; `/settings` — имя/скрытие датчиков.
+- Prebuild (`scripts/with-cipher.mjs`): URL+пароль → cipher в бандл; пароль на клиенте расшифровывает URL.
+- Heartbeat 25 с, live 3 с, JSONP; история только в Sheets.
+- `BASE_PATH` / `SITE_URL` — заглушка `/smart-dachs` локально; в CI из имени репо (или vars).
 
 ---
 

@@ -1,0 +1,264 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const cipher = import.meta.env.PUBLIC_DASHBOARD_CIPHER ?? "";
+const settingsHref = `${import.meta.env.BASE_URL}settings/`;
+---
+
+<BaseLayout title="smart-dch — температура">
+  <header class="flex shrink-0 items-start justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-ink-mute">smart-dch</p>
+      <h1 class="mt-1 text-3xl font-bold tracking-tight text-ink">Температура</h1>
+    </div>
+    <a class="shrink-0" href={settingsHref} aria-label="Настройки">
+      <liquid-glass inline class="glass-btn-secondary">Настройки</liquid-glass>
+    </a>
+  </header>
+
+  <div id="loginStage" class="flex flex-1 flex-col justify-center py-8">
+    <liquid-glass id="loginCard" class="mx-auto w-full max-w-md p-6 sm:p-7">
+      <h2 class="text-lg font-semibold text-ink">Вход</h2>
+      <p class="mt-1 text-sm text-ink-soft">Пароль расшифровывает адрес API на этом устройстве.</p>
+      <form id="login" class="mt-5 space-y-3">
+        <input
+          id="password"
+          class="glass-field"
+          type="password"
+          autocomplete="current-password"
+          placeholder="Пароль"
+          required
+        />
+        <button class="glass-btn w-full" type="submit">Войти</button>
+        <p id="loginError" class="text-sm font-medium text-red-200" hidden>Неверный пароль</p>
+        <p id="cipherMissing" class="text-sm text-ink-soft" hidden>
+          Нет токена. Задайте <code class="text-ink">DASHBOARD_API_URL</code> и
+          <code class="text-ink">DASHBOARD_PASSWORD</code> в <code class="text-ink">.env</code> и
+          пересоберите.
+        </p>
+      </form>
+    </liquid-glass>
+  </div>
+
+  <section id="panel" class="mt-8 space-y-4" hidden>
+    <liquid-glass class="px-5 py-4">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-ink-mute">Live</p>
+          <p id="status" class="mt-0.5 text-sm text-ink-soft">Нет данных</p>
+        </div>
+        <span
+          id="pulse"
+          class="h-2.5 w-2.5 rounded-full bg-white/50 opacity-60"
+          aria-hidden="true"
+        ></span>
+      </div>
+    </liquid-glass>
+
+    <div
+      id="sensorList"
+      class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4"
+    >
+    </div>
+    <liquid-glass id="emptyState" class="px-5 py-8 text-center text-sm text-ink-soft" hidden>
+      Нет live-снимка
+    </liquid-glass>
+  </section>
+
+  <!-- Sync UI restore before module scripts (avoids login flash). -->
+  <script is:inline>
+    (function () {
+      var KEY = "smart-dch-api-url";
+      try {
+        var url = (sessionStorage.getItem(KEY) || "").trim();
+        if (!/^https:\/\//i.test(url)) return;
+        var login = document.getElementById("loginStage");
+        var panel = document.getElementById("panel");
+        if (login) {
+          login.hidden = true;
+          login.classList.add("hidden");
+          login.classList.remove("flex");
+        }
+        if (panel) {
+          panel.hidden = false;
+          panel.classList.remove("hidden");
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <script define:vars={{ cipher }}>
+    window.DASHBOARD_CIPHER = cipher || window.DASHBOARD_CIPHER || "";
+  </script>
+  <script>
+    import "../components/liquid-glass";
+    import { decryptUrl } from "../lib/crypto";
+    import { fetchJsonp } from "../lib/jsonp";
+    import {
+      clearSessionApiUrl,
+      loadSessionApiUrl,
+      saveSessionApiUrl,
+    } from "../lib/sessionAuth";
+    import { loadLiveSnapshot, saveLiveSnapshot, type LivePayload } from "../lib/liveCache";
+    import {
+      displayName,
+      isHidden,
+      loadSensorPrefs,
+      rememberSeenSensorIds,
+      type SensorPrefs,
+    } from "../lib/sensorPrefs";
+    import { markSessionUnlocked, revealUnsplashBackground } from "../lib/unsplashBg";
+
+    let apiUrl = "";
+    let prefs: SensorPrefs = loadSensorPrefs();
+    let liveStarted = false;
+    const loginStage = document.getElementById("loginStage")!;
+    const panel = document.getElementById("panel")!;
+    const loginError = document.getElementById("loginError")!;
+    const cipherMissing = document.getElementById("cipherMissing")!;
+    const statusEl = document.getElementById("status")!;
+    const sensorList = document.getElementById("sensorList")!;
+    const emptyState = document.getElementById("emptyState") as HTMLElement;
+    const pulse = document.getElementById("pulse")!;
+
+    if (!window.DASHBOARD_CIPHER) {
+      cipherMissing.hidden = false;
+    }
+
+    function setEmptyText(text: string) {
+      const slot = emptyState.querySelector(":scope > .glass-content") || emptyState;
+      slot.textContent = text;
+    }
+
+    function showLiveUi() {
+      loginStage.hidden = true;
+      loginStage.classList.add("hidden");
+      loginStage.classList.remove("flex");
+      panel.hidden = false;
+      panel.classList.remove("hidden");
+    }
+
+    function renderLiveTable(data: LivePayload, updatedAt = Date.now(), persist = true) {
+      prefs = loadSensorPrefs();
+      const sensors = data?.sensors || [];
+      const ids = sensors.map((s) => String(s.id || "")).filter(Boolean);
+      rememberSeenSensorIds(ids);
+
+      const visible = sensors.filter((s) => {
+        const id = String(s.id || "");
+        return id && !isHidden(id, prefs);
+      });
+
+      sensorList.innerHTML = "";
+      if (!visible.length) {
+        statusEl.textContent = sensors.length ? "Все датчики скрыты" : "Нет live-снимка";
+        emptyState.hidden = false;
+        setEmptyText(sensors.length ? "Все датчики скрыты" : "Нет live-снимка");
+        if (persist) {
+          saveLiveSnapshot(data, updatedAt);
+        }
+        return;
+      }
+
+      emptyState.hidden = true;
+      statusEl.textContent = "Обновлено " + new Date(updatedAt).toLocaleTimeString("ru-RU");
+      pulse.classList.remove("opacity-60", "bg-white/50");
+      pulse.classList.add("bg-emerald-300", "animate-pulse");
+
+      for (const s of visible) {
+        const id = String(s.id || "");
+        const name = displayName(id, prefs);
+        const card = document.createElement("liquid-glass");
+        card.className = "sensor-tile";
+        card.innerHTML =
+          '<div class="flex h-full flex-col items-center justify-center gap-1.5 p-4 text-center">' +
+          '<p class="sensor-name text-sm font-medium leading-tight text-ink-soft"></p>' +
+          '<p class="sensor-temp text-4xl font-semibold tracking-tight tabular-nums text-ink sm:text-5xl"></p>' +
+          "</div>";
+        sensorList.appendChild(card);
+        const nameEl = card.querySelector(".sensor-name") as HTMLParagraphElement;
+        const tempEl = card.querySelector(".sensor-temp") as HTMLParagraphElement;
+        nameEl.textContent = name;
+        tempEl.textContent = Number(s.t).toFixed(1) + "°";
+      }
+
+      if (persist) {
+        saveLiveSnapshot(data, updatedAt);
+      }
+    }
+
+    function renderCachedSnapshot() {
+      const cached = loadLiveSnapshot();
+      if (!cached) {
+        return;
+      }
+      renderLiveTable({ sensors: cached.sensors }, cached.updatedAt, false);
+    }
+
+    async function sendHeartbeat() {
+      await fetchJsonp(apiUrl + "?type=3");
+    }
+
+    async function pollLiveSnapshot() {
+      const data = (await fetchJsonp(apiUrl + "?type=2")) as LivePayload;
+      renderLiveTable(data);
+    }
+
+    function startLiveLoops() {
+      if (liveStarted) {
+        return;
+      }
+      liveStarted = true;
+      setInterval(sendHeartbeat, 25000);
+      setInterval(pollLiveSnapshot, 3000);
+    }
+
+    async function enterWithApiUrl(url: string): Promise<void> {
+      apiUrl = url.trim();
+      if (!/^https:\/\//i.test(apiUrl)) {
+        throw new Error("bad url");
+      }
+      saveSessionApiUrl(apiUrl);
+      showLiveUi();
+      renderCachedSnapshot();
+      markSessionUnlocked();
+      void revealUnsplashBackground();
+      await sendHeartbeat();
+      await pollLiveSnapshot();
+      startLiveLoops();
+    }
+
+    async function enterWithPassword(password: string): Promise<void> {
+      const token = window.DASHBOARD_CIPHER;
+      if (!token || token.indexOf("PASTE_") === 0) {
+        cipherMissing.hidden = false;
+        throw new Error("no cipher");
+      }
+      const url = (await decryptUrl(token, password)).trim();
+      await enterWithApiUrl(url);
+    }
+
+    document.getElementById("login")!.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      loginError.hidden = true;
+      try {
+        const password = (document.getElementById("password") as HTMLInputElement).value;
+        await enterWithPassword(password);
+      } catch {
+        clearSessionApiUrl();
+        loginError.hidden = false;
+      }
+    });
+
+    const savedApiUrl = loadSessionApiUrl();
+    if (savedApiUrl) {
+      void enterWithApiUrl(savedApiUrl).catch(() => {
+        clearSessionApiUrl();
+        loginStage.hidden = false;
+        loginStage.classList.remove("hidden");
+        loginStage.classList.add("flex");
+        panel.hidden = true;
+      });
+    }
+  </script>
+</BaseLayout>

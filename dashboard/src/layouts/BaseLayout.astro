@@ -1,0 +1,124 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const defaultBg = `${base}bg-default.svg`;
+---
+
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>{title}</title>
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <link rel="preconnect" href="https://api.unsplash.com" crossorigin />
+    <link rel="preconnect" href="https://images.unsplash.com" crossorigin />
+  </head>
+  <body class="relative overflow-x-hidden">
+    <div
+      data-default-bg
+      class="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center bg-no-repeat"
+      aria-hidden="true"
+      style={`background-image: url('${defaultBg}')`}
+    >
+    </div>
+
+    <div
+      data-unsplash-bg
+      class="pointer-events-none fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat opacity-0 transition-opacity duration-700"
+      aria-hidden="true"
+    >
+    </div>
+
+    <!-- Sync restore from sessionStorage before module scripts (avoids default-bg flash). -->
+    <script is:inline>
+      (function () {
+        var UNLOCK = "smart-dch-unlocked";
+        var CACHE = "smart-dch-unsplash-bg";
+        try {
+          if (sessionStorage.getItem(UNLOCK) !== "1") return;
+          var raw = sessionStorage.getItem(CACHE);
+          if (!raw) return;
+          var entry = JSON.parse(raw);
+          if (!entry || !entry.url || entry.url.indexOf("data:image/") !== 0) return;
+          var layer = document.querySelector("[data-unsplash-bg]");
+          if (!layer) return;
+          layer.style.transition = "none";
+          layer.style.backgroundImage = "url(" + JSON.stringify(entry.url) + ")";
+          layer.style.opacity = "1";
+          layer.classList.remove("opacity-0");
+          layer.classList.add("opacity-100");
+          layer.dataset.ready = "1";
+          var def = document.querySelector("[data-default-bg]");
+          if (def) def.style.visibility = "hidden";
+          var credit = document.querySelector("[data-unsplash-credit]");
+          var photo = document.querySelector("[data-unsplash-photographer]");
+          if (credit) credit.hidden = false;
+          if (photo && entry.photographerName) {
+            photo.textContent = entry.photographerName;
+            if (entry.photographerUrl) {
+              photo.href =
+                entry.photographerUrl + "?utm_source=smart-dch&utm_medium=referral";
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <div
+      class="content-shell mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-between px-4 pb-10 pt-8 sm:px-6"
+    >
+      <slot />
+    </div>
+
+    <p
+      data-unsplash-credit
+      class="pointer-events-none fixed bottom-3 right-3 z-40 max-w-[14rem] text-right text-[10px] leading-snug text-white/55"
+      hidden
+    >
+      Photo by{" "}
+      <a
+        data-unsplash-photographer
+        class="pointer-events-auto underline decoration-white/40 underline-offset-2 hover:text-white/80"
+        href="https://unsplash.com/?utm_source=smart-dch&utm_medium=referral"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Unsplash
+      </a>
+      {" "}on{" "}
+      <a
+        class="pointer-events-auto underline decoration-white/40 underline-offset-2 hover:text-white/80"
+        href="https://unsplash.com/?utm_source=smart-dch&utm_medium=referral"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Unsplash
+      </a>
+    </p>
+
+    <!-- Preload as early as possible on login (and every page); paint only after unlock. -->
+    <script>
+      import {
+        isSessionUnlocked,
+        preloadUnsplashBackground,
+        revealUnsplashBackground,
+      } from "../lib/unsplashBg";
+
+      void preloadUnsplashBackground();
+      if (isSessionUnlocked()) {
+        void revealUnsplashBackground();
+      }
+    </script>
+    <script>
+      import "../components/liquid-glass";
+    </script>
+  </body>
+</html>

@@ -1,0 +1,109 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const homeHref = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title="smart-dch — настройки">
+  <header class="flex shrink-0 items-start justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-ink-mute">smart-dch</p>
+      <h1 class="mt-1 text-3xl font-bold tracking-tight text-ink">Настройки</h1>
+    </div>
+    <a class="shrink-0" href={homeHref} id="backHome">
+      <liquid-glass inline class="glass-btn-secondary">Назад</liquid-glass>
+    </a>
+  </header>
+
+  <section class="mx-auto mt-8 w-full max-w-lg">
+    <p class="text-sm text-ink-soft">
+      Имя и скрытие датчиков хранятся только в этом браузере. Список появится после первого
+      live-снимка на главной. Изменения сохраняются при выходе со страницы.
+    </p>
+
+    <div id="sensorPrefs" class="mt-5 space-y-3"></div>
+    <p id="sensorEmpty" class="mt-5 text-sm text-ink-soft">Пока нет известных датчиков.</p>
+  </section>
+
+  <script>
+    import "../components/liquid-glass";
+    import {
+      loadSeenSensorIds,
+      loadSensorPrefs,
+      saveSensorPrefs,
+      type SensorPrefs,
+    } from "../lib/sensorPrefs";
+
+    const prefsRoot = document.getElementById("sensorPrefs")!;
+    const sensorEmpty = document.getElementById("sensorEmpty")!;
+
+    function collectPrefs(): SensorPrefs {
+      const next: SensorPrefs = {};
+      for (const row of prefsRoot.querySelectorAll<HTMLElement>("[data-id]")) {
+        const id = row.dataset.id!;
+        const name = (row.querySelector(".name-input") as HTMLInputElement).value.trim();
+        const hidden = (row.querySelector(".hide-input") as HTMLInputElement).checked;
+        next[id] = { name, hidden };
+      }
+      return next;
+    }
+
+    function persistPrefs() {
+      if (!prefsRoot.querySelector("[data-id]")) {
+        return;
+      }
+      saveSensorPrefs(collectPrefs());
+    }
+
+    function renderPrefs() {
+      const ids = loadSeenSensorIds();
+      const prefs = loadSensorPrefs();
+      prefsRoot.innerHTML = "";
+
+      if (!ids.length) {
+        sensorEmpty.hidden = false;
+        return;
+      }
+
+      sensorEmpty.hidden = true;
+
+      for (const id of ids) {
+        const pref = prefs[id] || { name: "", hidden: false };
+        const row = document.createElement("liquid-glass");
+        row.className = "p-4";
+        row.dataset.id = id;
+        row.innerHTML =
+          '<p class="sensor-id font-mono text-xs text-ink-mute"></p>' +
+          '<label class="mt-3 block text-sm font-medium text-ink-soft" for="">Имя</label>' +
+          '<input class="glass-field name-input mt-1.5" type="text" placeholder="Имя датчика" />' +
+          '<label class="mt-3 flex items-center gap-2.5 text-sm text-ink">' +
+          '<input class="hide-input h-4 w-4 accent-white" type="checkbox" />' +
+          "Скрыть на главной</label>";
+        prefsRoot.appendChild(row);
+
+        const idEl = row.querySelector(".sensor-id") as HTMLParagraphElement;
+        const nameInput = row.querySelector(".name-input") as HTMLInputElement;
+        const hideInput = row.querySelector(".hide-input") as HTMLInputElement;
+        const nameLabel = row.querySelector("label") as HTMLLabelElement;
+        idEl.textContent = id;
+        nameInput.id = `sensor-name-${id}`;
+        nameLabel.htmlFor = nameInput.id;
+        nameInput.value = pref.name || "";
+        hideInput.checked = Boolean(pref.hidden);
+      }
+    }
+
+    document.getElementById("backHome")!.addEventListener("click", () => {
+      persistPrefs();
+    });
+
+    window.addEventListener("pagehide", persistPrefs);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        persistPrefs();
+      }
+    });
+
+    renderPrefs();
+  </script>
+</BaseLayout>

@@ -5,5 +5,8 @@ compile_commands.json
 .vscode/launch.json
 .vscode/ipch
 include/secrets.h
-dashboard/config.js
 .cache
+dashboard/node_modules
+dashboard/dist
+dashboard/.astro
+dashboard/.env
